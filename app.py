@@ -1,115 +1,92 @@
 import os
 import getpass
 import streamlit as st
-from dotenv import load_dotenv
 from PyPDF2 import PdfReader
-import langchain.embeddings
-# from langchain_community.llms import openai,huggingface_hub
-from langchain_community.llms import openai as llms_openai, huggingface_hub
-from langchain.text_splitter import CharacterTextSplitter
-# from langchain.embeddings import openai, huggingface
-from langchain.embeddings import openai as embeddings_openai, huggingface
-from langchain_community.chat_models import openai            # import issue to reslove
-from langchain_community.vectorstores import faiss
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
-from langchain_community.chat_models import openai
-# from langchain.llms import openai ,huggingface_hub
-# from langchain.chat_models import openai
-from htmltemplate import css, bot_template,user_template
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+import os
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai
+from langchain.vectorstores.faiss import FAISS
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains.question_answering import load_qa_chain
+from langchain.prompts import PromptTemplate
+from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+load_dotenv()
+os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+def get_pdf_text(pdf_docs):
+    text=""
+    for pdf in pdf_docs:
+        pdf_reader= PdfReader(pdf)
+        for page in pdf_reader.pages:
+            text+= page.extract_text()
+    return  text
 
-def get_docs_text(docs):
-    text = ""            # used to store all the text from the pdf
-    for doc in docs:     
-        reader = PdfReader(doc)   
-        for page in reader.pages:             
-            text += page.extract_text() # concat the text 
-    return text       # Single String with all the content in the docs
-        
 def get_text_chunks(text):
-    text_splitter = CharacterTextSplitter(
-        separator='\n',         
-        chunk_size=1000,
-        chunk_overlap=200,     # handling Knowledge loss with chunk overlapping the text 
-        length_function=len
-        )
-    # chunk = text_splitter.split_text(text=text)
-    # return chunk
-    return text_splitter.split_text(text=text)  # returning list of chunks
-    
-def get_vector_store(text_chunk):
-    # embeddings = huggingface.HuggingFaceInstructEmbeddings(model_name='hkunlp/instructor-large')
-    embeddings =  embeddings_openai.OpenAIEmbeddings()
-    # vectorstore = faiss.FAISS.from_texts(text=text_chunk,embedding=embeddings)
-    return faiss.FAISS.from_texts(text=text_chunk,embedding=embeddings)
-    
-def get_conversation_chain(vectorestore):
-    llm = llms_openai.ChatOpenAI()
-    optional_llm = huggingface_hub.HuggingFaceHub(repo_id="",model_kwargs={"temperature":0.5,"max_length":512})
-    memory = ConversationBufferMemory(memory_key="Chat_history",return_messages=True)
-    conversation_chain = ConversationalRetrievalChain.from_llm(llm=llm,retriever=vectorestore.as_retriever(),memory=memory
-    )
-    return conversation_chain
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
+    chunks = text_splitter.split_text(text)
+    return chunks
 
-def handle_user_input(userquestion):
-    try : 
-        response = st.session_state.conversation({"question":userquestion})
-        st.write(response)
-        st.session_state.chat_history = response['chat_history']
-        for i, message in enumerate(st.session_state.cha_history):
-            if i%2 == 0:
-                st.write(user_template.replace("{{MSG}}"),message.content ,unsafe_allow_html=True)
-            else:
-                st.write(bot_template.replace("{{MSG}}"),message.content ,unsafe_allow_html=True)
-    except Exception as e :
-        print(f"Exception at handle_user_input : {e}")
-    
+def get_vector_store(text_chunks):
+    embeddings = GoogleGenerativeAIEmbeddings(model = "models/embedding-001")
+    # embeddings =  OpenAIEmbeddings()
+    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+    vector_store.save_local("faiss_index")
+
+
+def get_conversational_chain():
+
+    prompt_template = """
+    Answer the question as detailed as possible from the provided context, make sure to provide all the details, if the answer is not in
+    provided context just say, "answer is not available in the context", don't provide the wrong answer\n\n
+    Context:\n {context}?\n
+    Question: \n{question}\n
+
+    Answer:
+    """
+
+    model = ChatGoogleGenerativeAI(model="gemini-pro",temperature=0.3)
+    prompt = PromptTemplate(template = prompt_template, input_variables = ["context", "question"])
+    chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
+
+    return chain
+
+
+
+def user_input(user_question):
+    embeddings = GoogleGenerativeAIEmbeddings(model = "models/embedding-001")
+    # embeddings = OpenAIEmbeddings()
+    new_db = FAISS.load_local("faiss_index", embeddings,allow_dangerous_deserialization=True)
+    docs = new_db.similarity_search(user_question)
+    chain = get_conversational_chain()
+    response = chain(
+        {"input_documents":docs, "question": user_question}
+        , return_only_outputs=True)
+    print(response)
+    st.write("Reply: ", response["output_text"])
+
 def main():
-    st.set_page_config(page_title="Chat with multiple documents", page_icon=":books:")
-    load_dotenv()
-    password = os.environ.get("MY_PASSWORD")
-    # os.environ["OPENAI_API_KEY"] = getpass.getpass()
-    st.write(css,unsafe_allow_html=True)
-    if "conversation" not in st.session_state :
-        st.session_state.conversation = None 
-    if "chat_history" not in st.session_state :
-        st.session_state.chat_history = None 
-        
-    st.header("Chat with multiple documents :books:")
-    userquestion = st.text_input("Ask question about your documents")
-    username = st.text_input("Add User Name: ")
-    botname = st.text_input("Add Bot Name : ")
-    if not username:
-        username = "Anonymous User"
-    if not botname:
-        botname = "Julie"
-    if userquestion:
-        handle_user_input(userquestion)
-    st.write(user_template.replace(f"{{MSG}}",f"Hello {botname}"),unsafe_allow_html=True)
-    st.write(bot_template.replace(f"{{MSG}}",f"Hello {username}"),unsafe_allow_html=True)
+    st.set_page_config("Chat PDF")
+    st.header("Chat with PDF using Gemini💁")
+
+    user_question = st.text_input("Ask a Question from the PDF Files")
+
+    if user_question:
+        user_input(user_question)
+
     with st.sidebar:
-        st.subheader("Your Docs:")
-        docs = st.file_uploader(
-            "upload your docs and click on 'Process'",
-            accept_multiple_files=True
-            )
-        if st.button("Process"):
-            with st.spinner("On the Way / Processing"):
-                # get the docs text
-                raw_text = get_docs_text(docs)
-                st.write(raw_text)    # printing the raw_text
-                
-                # # get text chunk
+        st.title("Menu:")
+        pdf_docs = st.file_uploader("Upload your PDF Files and Click on the Submit & Process Button", accept_multiple_files=True)
+        if st.button("Submit & Process"):
+            with st.spinner("Processing..."):
+                raw_text = get_pdf_text(pdf_docs)
                 text_chunks = get_text_chunks(raw_text)
-                st.write(text_chunks)  # printing list of chunk
-                
-                # # create vector store or vector representation of the text
-                # vectorstore = get_vector_store(text_chunks)
-                
-                # # crate conversation chain : conversation object
-                # st.session_state.conversation = get_conversation_chain(vectorstore)
-                
-        
+                get_vector_store(text_chunks)
+                st.success("Done")
+
+
+
 if __name__ == "__main__":
     main()
