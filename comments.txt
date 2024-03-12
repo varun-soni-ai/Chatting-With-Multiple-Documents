@@ -1,0 +1,14 @@
+'''
+    This only allow us to generate new messages of the conversation.
+    It takes history of conversation and return you the next element in the conversation.
+    st.session_state makes variable persistance when used.
+    st.session_state allow us to not reinitalises the variable in the case where some element in the streamlit events.
+    It allow user to protect the variable to reinitalises, as in streamlit wherever any event happens 
+    like click a button, upload etc. it reinitalise/reload entire program element or we can say all its varible as st.session_state allow user to protect from this.
+    And using this the streamlit know that this variable do not need to reinitalise.
+'''
+From line 25 : 
+'''Object of PdfReader class and initialise with doc object.
+   It creates PDF objects that has pages and we will have to read from the pages in the docs.
+   And we will be looping through the pages and add text 
+'''
