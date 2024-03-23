@@ -1,4 +1,3 @@
-app2.py
 CHAT@2.log
 comment.txt
 htmltemplate.py
@@ -8,5 +7,6 @@ chatPDF.log
 test_llam.py
 test-streamlit.py
 unpiiapp.py
+.env
 Only-Chat-app.py
 test-llam.py
