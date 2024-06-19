@@ -20,3 +20,5 @@ LangChain can be used for various NLP applications, including:
 3. Accurate Question Answering: Develop systems that can search for and deliver clear answers to user queries.
 4. Data Augmentation: Generate new training data for your LLMs based on existing information, leading to improved performance.
 5. Intelligent Virtual Assistants: Create virtual assistants capable of answering questions, searching for information, and even completing tasks online.'''
+
+![alt text](image.png)
